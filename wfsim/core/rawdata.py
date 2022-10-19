@@ -1,5 +1,5 @@
 import logging
-from numba import njit
+from numba import njit, jit
 import numpy as np
 from strax import exporter
 from strax.utils import tqdm
@@ -24,7 +24,7 @@ PULSE_TYPE_NAMES = ('RESERVED', 's1', 's2', 'unknown', 'pi_el', 'pmt_ap', 'pe_el
 @export
 class RawData(object):
 
-    def __init__(self, config):
+    def __init__(self, config):        
         self.config = config
         self.pulses = dict(
             s1=S1(config),
@@ -395,12 +395,13 @@ class RawData(object):
         sum_template[left:right] += adc_wave
         return sum_template
 
-    @staticmethod
-    @njit
-    def add_noise(data, channel_mask, noise_data, noise_data_length, noise_data_channels):
+    @jit(nopython=False)
+    def add_noise(self, data, channel_mask, noise_data, noise_data_length, noise_data_channels):
         """
         Get chunk(s) of noise sample from real noise data
         """
+        np.random.seed(self.config['seed'])
+        
         if channel_mask['mask'].sum() == 0:
             return
 

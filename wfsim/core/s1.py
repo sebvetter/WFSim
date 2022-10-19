@@ -1,5 +1,5 @@
 import logging
-from numba import njit
+# from numba import njit
 import numpy as np
 from strax import exporter
 from .pulse import Pulse
@@ -41,9 +41,15 @@ class S1(Pulse):
     def __init__(self, config):
         super().__init__(config)
         self.phase = 'liquid'  # To distinguish singlet/triplet time delay.
+        
+        np.random.seed(seed=self.config['seed'])
+        
         if 'nest' in self.config['s1_model_type'] and (self.nestpy_calc is None):
             log.info('Using NEST for scintillation time without set calculator\n'
                      'Creating new nestpy calculator')
+            rng = nestpy.RandomGen.rndm()
+            rng.set_seed(self.config['seed'])
+            
             self.nestpy_calc = nestpy.NESTcalc(nestpy.DetectorExample_XENON10())
 
         # Check if user specified s1 model type exist

@@ -1,5 +1,5 @@
 import logging
-from numba import njit
+from numba import njit, jit
 import numpy as np
 from scipy.stats import skewnorm
 from strax import exporter
@@ -22,6 +22,8 @@ class S2(Pulse):
 
     def __init__(self, config):
         super().__init__(config)
+        
+        np.random.seed(seed=self.config['seed'])
 
         self.phase = 'gas'  # To distinguish singlet/triplet time delay.
         self.luminescence_switch_threshold = 100  # When to use simplified model (NOT IN USE)
@@ -253,9 +255,8 @@ class S2(Pulse):
         
         return n_electron
 
-    @staticmethod
-    @njit
-    def electron_timings(t, n_electron, drift_time_mean, drift_time_spread, sc_gain, timings, gains,
+    @jit(forceobj=True)
+    def electron_timings(self, t, n_electron, drift_time_mean, drift_time_spread, sc_gain, timings, gains,
                          electron_trapping_time):
         """Calculate arrival times of the electrons. Data is written to the timings and gains arrays
         :param t: 1d array of ints
@@ -267,6 +268,8 @@ class S2(Pulse):
         :param gains: empty array with length sum(n_electron)
         :param electron_trapping_time: configuration values
         """
+        np.random.seed(self.config['seed'])
+        
         assert len(timings) == np.sum(n_electron)
         assert len(gains) == np.sum(n_electron)
         assert len(sc_gain) == len(t)
@@ -283,8 +286,7 @@ class S2(Pulse):
                 gains[i_electron] = sc_gain[i]
                 i_electron += 1
 
-    @staticmethod
-    def get_n_photons(t, n_electron, z_int, xy_int, sc_gain, config, resource):
+    def get_n_photons(self, t, n_electron, z_int, xy_int, sc_gain, config, resource):
         """Generates photon timings for S2s.
         Returns a list of photon timings and instructions repeated for original electron
         
@@ -299,7 +301,7 @@ class S2(Pulse):
         drift_time_mean, drift_time_spread = S2.get_s2_drift_time_params(z_int, xy_int, config, resource)
         _electron_timings = np.zeros(np.sum(n_electron), np.int64)
         _electron_gains = np.zeros(np.sum(n_electron), np.float64)
-        S2.electron_timings(t, n_electron, drift_time_mean, drift_time_spread, sc_gain,
+        self.electron_timings(t, n_electron, drift_time_mean, drift_time_spread, sc_gain,
                             _electron_timings, _electron_gains, config['electron_trapping_time'])
 
         # Populate with photons per e/ per position
@@ -312,9 +314,7 @@ class S2(Pulse):
 
         return n_photons_per_xy, n_photons_per_ele, _electron_timings
 
-    @staticmethod
-    @njit
-    def _luminescence_timings_simple(n, dG, E0, r, dr, rr, alpha, uE, p, n_photons):
+    def _luminescence_timings_simple(self, n, dG, E0, r, dr, rr, alpha, uE, p, n_photons):
         """
         Luminescence time distribution computation, calculates emission timings of photons from the excited electrons
         return 1d nested array with ints
@@ -338,8 +338,7 @@ class S2(Pulse):
 
         return emission_time
 
-    @staticmethod
-    def luminescence_timings_simple(xy, n_photons, config, resource):
+    def luminescence_timings_simple(self, xy, n_photons, config, resource):
         """
         Luminescence time distribution computation according to simple s2 model (many many many single electrons)
         :param xy: 1d array with positions
@@ -371,7 +370,7 @@ class S2(Pulse):
         r = np.arange(np.max(dG), rW, -dr)
         rr = np.clip(1 / r, 1 / rA, 1 / rW)
 
-        return S2._luminescence_timings_simple(len(xy), dG, E0, 
+        return self._luminescence_timings_simple(len(xy), dG, E0, 
                                                r, dr, rr, alpha, uE,
                                                pressure, n_photons)
     
@@ -406,9 +405,8 @@ class S2(Pulse):
         avgt = np.average(resource.s2_luminescence['t']).astype(int)
         return resource.s2_luminescence['t'][index_row, index_col].astype(np.int64) - avgt
     
-    @staticmethod
-    @njit
-    def draw_excitation_times(inv_cdf_list, hist_indices, nph, diff_nearest_gg, d_gas_gap):
+    @jit
+    def draw_excitation_times(self, inv_cdf_list, hist_indices, nph, diff_nearest_gg, d_gas_gap):
         
         """
         Draws the excitation times from the GARFIELD electroluminescence map
@@ -424,6 +422,7 @@ class S2(Pulse):
         
         returns time of each photon
         """
+        np.random.seed(self.config['seed'])
         
         inv_cdf_len = len(inv_cdf_list[0])
         timings = np.zeros(np.sum(nph))
@@ -454,8 +453,7 @@ class S2(Pulse):
             count+=n
         return timings
     
-    @staticmethod
-    def luminescence_timings_garfield_gasgap(xy, n_photons, resource):
+    def luminescence_timings_garfield_gasgap(self, xy, n_photons, resource):
         """
         Luminescence time distribution computation according to garfield scintillation maps
         which are ONLY drawn from below the anode, and at different gas gaps
@@ -474,7 +472,7 @@ class S2(Pulse):
         draw_index = np.digitize(cont_gas_gaps, resource.s2_luminescence_gg['gas_gap'])-1
         diff_nearest_gg = cont_gas_gaps - resource.s2_luminescence_gg['gas_gap'][draw_index]
         
-        return S2.draw_excitation_times(resource.s2_luminescence_gg['timing_inv_cdf'],
+        return self.draw_excitation_times(resource.s2_luminescence_gg['timing_inv_cdf'],
                                         draw_index,
                                         n_photons,
                                         diff_nearest_gg,
@@ -498,8 +496,7 @@ class S2(Pulse):
 
         return prop_time.astype(np.int64)
 
-    @staticmethod
-    def photon_timings(positions, n_photons_per_xy, _electron_timings, n_photons_per_ele, _photon_channels, phase, config, resource):
+    def photon_timings(self, positions, n_photons_per_xy, _electron_timings, n_photons_per_ele, _photon_channels, phase, config, resource):
         """Get photon times and add delays based on models
 
         :param positions: 2d float array, xy positions of s2
@@ -528,7 +525,7 @@ class S2(Pulse):
                                                                confine_position=confine_position)
             
         elif config['s2_luminescence_model']=='garfield_gas_gap':
-            _photon_timings = S2.luminescence_timings_garfield_gasgap(positions, n_photons_per_xy,
+            _photon_timings = self.luminescence_timings_garfield_gasgap(positions, n_photons_per_xy,
                                                                       resource=resource)
         else:
             raise KeyError(f"{config['s2_luminescence_model']} is not valid! Use 'simple' or 'garfield' or 'garfield_gas_gap'")

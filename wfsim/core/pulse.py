@@ -25,6 +25,8 @@ class Pulse(object):
         self.config = config
         self.config.update(self.config.get(self.__class__.__name__, {}))
         self.resource = load_config(config)
+        
+        np.random.seed(seed=self.config.get('seed', None))
 
         self.init_pmt_current_templates()
         self.init_spe_scaling_factor_distributions()
@@ -35,6 +37,7 @@ class Pulse(object):
             / (self.config['digitizer_voltage_range'] / 2 ** (self.config['digitizer_bits']))
 
         self.clear_pulse_cache()
+        
 
     def __call__(self, *args):
         """

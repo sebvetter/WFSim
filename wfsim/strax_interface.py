@@ -129,7 +129,8 @@ def rand_instructions(c):
                               drift_field=c.get('drift_field', 100),  # V/cm
                               tpc_radius=c.get('tpc_radius', straxen.tpc_r),
                               tpc_length=c.get('tpc_length', straxen.tpc_z),
-                              nest_inst_types=[7]
+                              nest_inst_types=[7],
+                              seed=c.get('seed', None)
                               )
 
 
@@ -159,7 +160,11 @@ def _rand_instructions(
         tpc_length: float = straxen.tpc_z,
         tpc_radius: float = straxen.tpc_r,
         nest_inst_types: ty.Union[ty.List[int], ty.Tuple[ty.List], np.ndarray, None] = None,
+        seed=None,
 ) -> np.ndarray:
+    
+    np.random.seed(seed=seed)
+    
     import nestpy
     if nest_inst_types is None:
         nest_inst_types = [7]
